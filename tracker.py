@@ -1,7 +1,14 @@
 import os
 import requests
-from bs4 import BeautifulSoup
 import sys
+from bs4 import BeautifulSoup
+
+# --- [بخش جدید] برای حل مشکل SSL سایت پست ---
+# این کد به کتابخانه اتصال ما می‌گوید که از یک پروتکل امنیتی قدیمی‌تر هم پشتیبانی کند
+import urllib3
+requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = 'ALL:@SECLEVEL=1'
+# --- [پایان بخش جدید] ---
+
 
 # --- خواندن اطلاعات از Secrets گیت‌هاب ---
 BOT_TOKEN = os.getenv('BALE_BOT_TOKEN')
@@ -15,27 +22,25 @@ BALE_API_URL = f"https://tapi.bale.ai/bot{BOT_TOKEN}/sendMessage"
 def get_tracking_status():
     """از سایت tracking.post.ir برای گرفتن آخرین وضعیت مرسوله استفاده می‌کند"""
     try:
+        # حالا این درخواست با تنظیمات امنیتی جدید ارسال می‌شود
         response = requests.get(POST_TRACKING_URL)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # پیدا کردن جدول وضعیت‌ها و استخراج آخرین ردیف
         table = soup.find('table', class_='table-striped')
         if not table:
             print("جدول اطلاعات مرسوله در صفحه یافت نشد. احتمالا کد رهگیری اشتباه است.")
             return None
             
-        last_row = table.find_all('tr')[-1] # آخرین ردیف جدول
+        last_row = table.find_all('tr')[-1]
         columns = last_row.find_all('td')
         
-        # استخراج متن از ستون‌های تاریخ، ساعت و وضعیت
         if len(columns) >= 4:
             date = columns[3].text.strip()
             time = columns[2].text.strip()
             status = columns[0].text.strip()
             location = columns[1].text.strip()
-            # ترکیب وضعیت نهایی
             final_status = f"{status} | مکان: {location} | زمان: {date} {time}"
             return final_status
         else:
