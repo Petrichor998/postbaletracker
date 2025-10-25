@@ -2,11 +2,23 @@ import os
 import requests
 import sys
 from bs4 import BeautifulSoup
+import ssl
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.poolmanager import PoolManager
 
-# --- [بخش جدید] برای حل مشکل SSL سایت پست ---
-# این کد به کتابخانه اتصال ما می‌گوید که از یک پروتکل امنیتی قدیمی‌تر هم پشتیبانی کند
-import urllib3
-requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS = 'ALL:@SECLEVEL=1'
+# --- [بخش جدید و قوی‌تر] برای حل مشکل SSL سایت پست ---
+# یک کلاس سفارشی برای اتصال می‌سازیم که پروتکل‌های قدیمی را بپذیرد
+class LegacyTLSAdapter(HTTPAdapter):
+    def init_poolmanager(self, connections, maxsize, block=False):
+        # تنظیمات امنیتی را برای این اتصال خاص تغییر می‌دهیم
+        ctx = ssl.create_default_context()
+        ctx.set_ciphers('ALL:@SECLEVEL=1')
+        self.poolmanager = PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            ssl_context=ctx
+        )
 # --- [پایان بخش جدید] ---
 
 
@@ -22,8 +34,11 @@ BALE_API_URL = f"https://tapi.bale.ai/bot{BOT_TOKEN}/sendMessage"
 def get_tracking_status():
     """از سایت tracking.post.ir برای گرفتن آخرین وضعیت مرسوله استفاده می‌کند"""
     try:
-        # حالا این درخواست با تنظیمات امنیتی جدید ارسال می‌شود
-        response = requests.get(POST_TRACKING_URL)
+        # از موتور اتصال سفارشی خودمان استفاده می‌کنیم
+        session = requests.Session()
+        session.mount('https://', LegacyTLSAdapter())
+        
+        response = session.get(POST_TRACKING_URL)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
