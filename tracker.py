@@ -6,11 +6,9 @@ import ssl
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.poolmanager import PoolManager
 
-# --- [بخش جدید و قوی‌تر] برای حل مشکل SSL سایت پست ---
-# یک کلاس سفارشی برای اتصال می‌سازیم که پروتکل‌های قدیمی را بپذیرد
+# کلاس سفارشی برای حل مشکل SSL سایت پست
 class LegacyTLSAdapter(HTTPAdapter):
     def init_poolmanager(self, connections, maxsize, block=False):
-        # تنظیمات امنیتی را برای این اتصال خاص تغییر می‌دهیم
         ctx = ssl.create_default_context()
         ctx.set_ciphers('ALL:@SECLEVEL=1')
         self.poolmanager = PoolManager(
@@ -19,34 +17,37 @@ class LegacyTLSAdapter(HTTPAdapter):
             block=block,
             ssl_context=ctx
         )
-# --- [پایان بخش جدید] ---
 
-
-# --- خواندن اطلاعات از Secrets گیت‌هاب ---
+# خواندن اطلاعات از Secrets گیت‌هاب
 BOT_TOKEN = os.getenv('BALE_BOT_TOKEN')
 CHAT_ID = os.getenv('BALE_CHAT_ID')
 TRACKING_CODE = os.getenv('TRACKING_CODE')
 
-# آدرس‌های مورد نیاز
 POST_TRACKING_URL = f"https://tracking.post.ir/?id={TRACKING_CODE}"
 BALE_API_URL = f"https://tapi.bale.ai/bot{BOT_TOKEN}/sendMessage"
 
 def get_tracking_status():
     """از سایت tracking.post.ir برای گرفتن آخرین وضعیت مرسوله استفاده می‌کند"""
     try:
-        # از موتور اتصال سفارشی خودمان استفاده می‌کنیم
         session = requests.Session()
         session.mount('https://', LegacyTLSAdapter())
-        
         response = session.get(POST_TRACKING_URL)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
         table = soup.find('table', class_='table-striped')
+        
+        # --- [بخش عیب‌یابی] ---
+        # اگر جدول پیدا نشد، کل صفحه را چاپ کن
         if not table:
-            print("جدول اطلاعات مرسوله در صفحه یافت نشد. احتمالا کد رهگیری اشتباه است.")
+            print("!!! عیب‌یابی: جدول اطلاعات مرسوله یافت نشد.")
+            print("کد رهگیری ممکن است اشتباه باشد یا ساختار صفحه تغییر کرده است.")
+            print("\n--- محتوای کامل HTML دریافتی از سایت پست در زیر چاپ می‌شود ---\n")
+            print(response.text)
+            print("\n--- پایان محتوای HTML ---\n")
             return None
+        # --- [پایان بخش عیب‌یابی] ---
             
         last_row = table.find_all('tr')[-1]
         columns = last_row.find_all('td')
@@ -69,8 +70,8 @@ def get_tracking_status():
         print(f"خطا در پردازش اطلاعات صفحه: {e}")
         return None
 
+# بقیه کد بدون تغییر باقی می‌ماند
 def send_bale_message(message):
-    """یک پیام به ربات بله ارسال می‌کند"""
     payload = {'chat_id': CHAT_ID, 'text': message}
     try:
         response = requests.post(BALE_API_URL, data=payload)
@@ -80,10 +81,8 @@ def send_bale_message(message):
         print(f"خطا در ارسال پیام به «بله»: {e}")
 
 def main():
-    """تابع اصلی برنامه"""
     last_status = ""
     status_file = "last_status.txt"
-
     try:
         with open(status_file, 'r', encoding='utf-8') as f:
             last_status = f.read().strip()
@@ -91,7 +90,6 @@ def main():
         print("فایل وضعیت قبلی یافت نشد. یک فایل جدید ایجاد می‌شود.")
 
     current_status = get_tracking_status()
-
     if not current_status:
         print("نمی‌توان وضعیت فعلی را دریافت کرد. برنامه متوقف می‌شود.")
         sys.exit(1)
@@ -107,7 +105,6 @@ def main():
             f"📌 وضعیت جدید: {current_status}"
         )
         send_bale_message(message)
-        
         with open(status_file, 'w', encoding='utf-8') as f:
             f.write(current_status)
     else:
